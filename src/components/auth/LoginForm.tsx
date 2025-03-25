@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -17,6 +16,7 @@ import { Fingerprint, Loader2, SmartphoneIcon } from 'lucide-react';
 import FingerPrintScanner from './FingerPrintScanner';
 import OtpVerification from './OtpVerification';
 import { toast } from "sonner";
+import { auth } from '@/services/api';
 
 const mobileRegex = /^[6-9]\d{9}$/;
 
@@ -44,131 +44,109 @@ const LoginForm: React.FC<LoginFormProps> = ({ onSubmit }) => {
     },
   });
 
-  const handleFormSubmit = (values: FormValues) => {
+  const handleFormSubmit = async (values: FormValues) => {
     setMobile(values.mobile);
     setSendingOtp(true);
     
-    // Simulate sending OTP (replace with actual API call)
-    setTimeout(() => {
+    try {
+      await auth.resendOtp(values.mobile);
       setSendingOtp(false);
       setStage('otp');
       toast.success("OTP sent to your mobile number");
-    }, 1500);
+    } catch (error) {
+      console.error("Error sending OTP:", error);
+      toast.error("Failed to send OTP. Please try again.");
+      setSendingOtp(false);
+    }
   };
 
-  const handleOtpVerify = (success: boolean) => {
+  const handleOtpVerify = async (success: boolean) => {
     if (success) {
       setStage('fingerprint');
     }
   };
 
-  const handleOtpResend = () => {
-    // Logic for resending OTP is handled within the OtpVerification component
+  const handleOtpResend = async () => {
+    try {
+      await auth.resendOtp(mobile);
+      toast.success("A new OTP has been sent to your mobile number");
+    } catch (error) {
+      console.error("Error resending OTP:", error);
+      toast.error("Failed to resend OTP. Please try again.");
+    }
   };
 
-  const handleFingerprintComplete = (success: boolean) => {
+  const handleFingerprintComplete = async (success: boolean) => {
     if (success) {
-      setTimeout(() => {
-        onSubmit({
-          mobile,
-          fingerprint: true,
-        });
-      }, 800);
+      try {
+        const response = await auth.login(mobile, true);
+        if (response.success) {
+          onSubmit({
+            mobile,
+            fingerprint: true,
+          });
+        }
+      } catch (error) {
+        console.error("Error during login:", error);
+        toast.error("Login failed. Please try again.");
+      }
     }
   };
 
   return (
-    <div className="w-full max-w-sm mx-auto space-y-6 animate-fade-in">
+    <div className="w-full max-w-md space-y-8">
       {stage === 'form' && (
-        <>
-          <div className="text-center space-y-2">
-            <h2 className="text-2xl font-semibold tracking-tight">Welcome back</h2>
-            <p className="text-muted-foreground">
-              Enter your mobile number to sign in
-            </p>
-          </div>
-          
-          <Form {...form}>
-            <form 
-              onSubmit={form.handleSubmit(handleFormSubmit)} 
-              className="space-y-4"
-            >
-              <FormField
-                control={form.control}
-                name="mobile"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mobile Number</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <SmartphoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input 
-                          placeholder="Enter your 10-digit mobile number" 
-                          className="pl-10" 
-                          {...field} 
-                        />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <Button type="submit" className="w-full" disabled={sendingOtp}>
-                {sendingOtp ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Sending OTP...
-                  </>
-                ) : (
-                  "Continue"
-                )}
-              </Button>
-            </form>
-          </Form>
-          
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground">
-              Don't have an account?{" "}
-              <a href="/register" className="text-primary hover:underline">
-                Register
-              </a>
-            </p>
-          </div>
-        </>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
+            <FormField
+              control={form.control}
+              name="mobile"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Mobile Number</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <SmartphoneIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                      <Input
+                        {...field}
+                        type="tel"
+                        placeholder="Enter your mobile number"
+                        className="pl-10"
+                      />
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <Button type="submit" className="w-full" disabled={sendingOtp}>
+              {sendingOtp ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Sending OTP...
+                </>
+              ) : (
+                'Continue'
+              )}
+            </Button>
+          </form>
+        </Form>
       )}
 
       {stage === 'otp' && (
-        <OtpVerification 
+        <OtpVerification
           mobileNumber={mobile}
           onVerify={handleOtpVerify}
           onResend={handleOtpResend}
           onBack={() => setStage('form')}
         />
       )}
-      
+
       {stage === 'fingerprint' && (
-        <div className="text-center space-y-8">
-          <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Verify Your Identity</h2>
-            <p className="text-muted-foreground mt-2">
-              Please scan your fingerprint to continue
-            </p>
-          </div>
-          
-          <FingerPrintScanner 
-            onScanComplete={handleFingerprintComplete} 
-            className="py-8"
-          />
-          
-          <Button 
-            variant="outline" 
-            onClick={() => setStage('otp')}
-            className="mt-4"
-          >
-            Go Back
-          </Button>
-        </div>
+        <FingerPrintScanner
+          onScanComplete={handleFingerprintComplete}
+          onBack={() => setStage('otp')}
+        />
       )}
     </div>
   );
